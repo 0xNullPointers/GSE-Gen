@@ -39,7 +39,6 @@ def main():
         "threadManager",
         "achievements",
         "appID_finder",
-        "search_file",
         "dlc_gen"
     ]
 
