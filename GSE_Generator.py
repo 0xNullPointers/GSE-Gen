@@ -1,6 +1,8 @@
 import os
 import sys
 import queue
+import shutil
+import configparser
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QGridLayout, QLabel, QLineEdit, QFrame, QHBoxLayout, QVBoxLayout, QCheckBox, QPushButton, QPlainTextEdit, QFileDialog
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QPalette, QIcon
@@ -46,7 +48,7 @@ class AchievementFetcherGUI(QMainWindow):
         self.msg_queue = queue.Queue()
         self.assets_dir = os.path.join(os.getcwd(), "assets")
         os.makedirs(self.assets_dir, exist_ok=True)
-        self.username_file = os.path.join(self.assets_dir, "username.txt")
+        self.settings_path = os.path.join(self.assets_dir, 'settings.ini')
         
         # Initialize thread manager
         self.thread_manager = ThreadManager()
@@ -136,31 +138,44 @@ class AchievementFetcherGUI(QMainWindow):
         checkbox_layout = QGridLayout(checkbox_frame)
         checkbox_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.use_steam = QCheckBox("Use Steam")
-        self.use_steam.setToolTip("Use Steam Community to fetch achievements data")
-        self.use_steam.setToolTipDuration(5000)
+        # Init config parser
+        self.config = configparser.ConfigParser(comment_prefixes='/', allow_no_value=True)
+        self.config.optionxform = str
+        self.config.read(self.settings_path)
+        if 'Settings' not in self.config:
+            self.config['Settings'] = {}
 
-        self.use_local_save = QCheckBox("Local Save")
-        self.use_local_save.setToolTip("Save game data inside game folder")
-        self.use_local_save.setToolTipDuration(5000)
+        # Create checkbox function
+        def create_checkbox(name, label, tooltip):
+            checkbox = QCheckBox(label)
+            checkbox.setToolTip(tooltip)
+            checkbox.setToolTipDuration(5000)
+            # Get config value, default is False
+            checkbox.setChecked(self.config.getboolean('Settings', name, fallback=False))
+            
+            def on_change(state):
+                self.config['Settings'][name] = str(bool(state))
+                with open(self.settings_path, 'w') as f:
+                    self.config.write(f)
+            
+            checkbox.stateChanged.connect(on_change)
+            return checkbox
 
-        self.disable_lan_only = QCheckBox("Disable LAN Only")
-        self.disable_lan_only.setToolTip("Allow connecting to online servers instead of LAN only")
-        self.disable_lan_only.setToolTipDuration(5000)
+        # Create checkboxes
+        self.use_steam = create_checkbox('use_steam', "Use Steam", "Use Steam Community to fetch achievements data")
+        self.use_local_save = create_checkbox('use_local_save', "Local Save", "Save game data inside game folder")
+        self.disable_lan_only = create_checkbox('disable_lan_only', "Disable LAN Only", "Allow connecting to online servers instead of LAN only")
+        self.achievements_only = create_checkbox('achievements_only', "Achievements Only", "Only generate achievement files, skip other emulator files")
+        self.disable_overlay = create_checkbox('disable_overlay', "Disable Overlay", "Disable the Experimental Steam overlay in-game (recommended)")
+        self.auto_replace = create_checkbox('auto_replace', "Auto Replace", "Automatically replace GSE files in Game dir")
 
-        self.achievements_only = QCheckBox("Achievements Only")
-        self.achievements_only.setToolTip("Only generate achievement files, skip other emulator files")
-        self.achievements_only.setToolTipDuration(5000)
-
-        self.disable_overlay = QCheckBox("Disable Overlay")
-        self.disable_overlay.setToolTip("Disable the Experimental Steam overlay in-game (recommended)")
-        self.disable_overlay.setToolTipDuration(5000)
-
+        # Add checkboxes to layout
         checkbox_layout.addWidget(self.use_steam, 0, 0)
         checkbox_layout.addWidget(self.use_local_save, 1, 0)
         checkbox_layout.addWidget(self.disable_overlay, 2, 0)
         checkbox_layout.addWidget(self.disable_lan_only, 0, 1)
         checkbox_layout.addWidget(self.achievements_only, 1, 1)
+        checkbox_layout.addWidget(self.auto_replace, 2, 1)
 
         controls_layout.addWidget(checkbox_frame, stretch=1)
 
@@ -243,24 +258,25 @@ class AchievementFetcherGUI(QMainWindow):
         app_id = self.app_id_entry.text().strip()
         self.game_name_entry.setReadOnly(bool(app_id))
 
-    # Save and load username from username.txt
-    def load_saved_username(self):
-        if os.path.exists(self.username_file):
-            try:
-                with open(self.username_file, 'r', encoding='utf-8') as f:
-                    saved_username = f.read().strip()
-                    if saved_username:
-                        self.user_account_entry.setText(saved_username)
-            except Exception as e:
-                self.write_output(f"Failed to load username: {str(e)}")
-
+    # Save and load username from settings.ini
     def save_username(self):
-        username = self.user_account_entry.text().strip()
         try:
-            with open(self.username_file, 'w', encoding='utf-8') as f:
-                f.write(username)
+            username = self.user_account_entry.text().strip()
+            if 'Settings' not in self.config:
+                self.config['Settings'] = {}
+            self.config['Settings']['username'] = username
+            with open(self.settings_path, 'w') as f:
+                self.config.write(f)
         except Exception as e:
             self.write_output(f"Failed to save username: {str(e)}")
+
+    def load_saved_username(self):
+        try:
+            username = self.config.get('Settings', 'username', fallback='')
+            if username:
+                self.user_account_entry.setText(username)
+        except Exception as e:
+            self.write_output(f"Failed to load username: {str(e)}")
 
     # Generate configs.main.ini and configs.user.ini
     def create_user_config(self, settings_dir: str):
@@ -287,34 +303,39 @@ class AchievementFetcherGUI(QMainWindow):
 
     # Select steam_api(64).dll dialog
     def select_dll(self):
-        self.write_output("Select steam_api(64).dll of the Game...")
-        try:
-            # Create a new QFileDialog instance instead of using static method
-            dialog = QFileDialog(self)
-            dialog.setWindowTitle("Select steam_api.dll or steam_api64.dll of the Game")
-            dialog.setNameFilter("Steam API DLL (steam_api*.dll)")
-            dialog.setFileMode(QFileDialog.ExistingFile)
-            dialog.setViewMode(QFileDialog.Detail)
+            self.write_output("Select Original Game folder...")
+            try:
+                # Create a new QFileDialog
+                dialog = QFileDialog(self)
+                dialog.setWindowTitle("Select original Game folder")
+                dialog.setFileMode(QFileDialog.Directory)
+                dialog.setViewMode(QFileDialog.Detail)
             
-            if dialog.exec() == QFileDialog.Accepted:
-                selected_files = dialog.selectedFiles()
-                if selected_files:
-                    dll_path = selected_files[0]
-                    self.selected_dll_path = dll_path
-                    self.continue_generation()
+                if dialog.exec() == QFileDialog.Accepted:
+                    selected_files = dialog.selectedFiles()
+                    if selected_files:
+                        folder_path = os.path.normpath(selected_files[0])
+                        # Ensure proper permissions
+                        if os.access(folder_path, os.R_OK):
+                            self.selected_dll_path = folder_path
+                            self.continue_generation()
+                        else:
+                            self.write_output(f"Permission denied - {folder_path}")
+                            self.set_status("Permission denied", True)
+                            self.generate_btn.setEnabled(True)
+                    else:
+                        self.write_output("No folder selected")
+                        self.set_status("No folder selected", True)
+                        self.generate_btn.setEnabled(True)
                 else:
-                    self.write_output("No DLL file selected")
-                    self.set_status("No DLL selected", True)
+                    self.write_output("No folder selected")
+                    self.set_status("No folder selected", True)
                     self.generate_btn.setEnabled(True)
-            else:
-                self.write_output("DLL selection cancelled")
-                self.set_status("No DLL selected", True)
-                self.generate_btn.setEnabled(True)
                 
-        except Exception as e:
-            self.write_output(f"Error selecting DLL: {str(e)}")
-            self.set_status("Error in DLL selection", True)
-            self.generate_btn.setEnabled(True)
+            except Exception as e:
+                self.write_output(f"Error selecting folder: {str(e)}")
+                self.set_status("Error in folder selection", True)
+                self.generate_btn.setEnabled(True)
 
     # Process input
     def process_input(self, app_id, game_name):
@@ -368,11 +389,34 @@ class AchievementFetcherGUI(QMainWindow):
             os.makedirs(settings_dir, exist_ok=True)
             
             if not self.achievements_only.isChecked():
-                self._generate_core_files(game_dir, app_id, file_path)
+                dll_path = self._generate_core_files(game_dir, app_id, file_path)
             
             self._generate_achievements(settings_dir, app_id, use_steam)
             self.create_user_config(settings_dir)
             
+            # Copying files after all files are generated
+            if self.auto_replace.isChecked() and dll_path:
+                try:
+                    target_dir = os.path.dirname(dll_path)
+                    for root, dirs, files in os.walk(game_dir):
+                        rel_path = os.path.relpath(root, game_dir)
+                        for dir_name in dirs:
+                            target_path = os.path.join(target_dir, rel_path, dir_name)
+                            os.makedirs(target_path, exist_ok=True)
+                        for file_name in files:
+                            source_file = os.path.join(root, file_name)
+                            target_file = os.path.join(target_dir, rel_path, file_name)
+                            try:
+                                if os.path.exists(target_file):
+                                    os.remove(target_file)
+                            except PermissionError:
+                                continue
+                            shutil.copy2(source_file, target_file)
+                    self.write_output("Files copied to Game dir successfully!")
+                except Exception as e:
+                    self.write_output(f"Warning: Failed to copy files: {str(e)}")
+                    self.set_status("Failed to copy files", True)
+
             return game_dir
         except Exception as e:
             raise Exception(f"Failed to generate files: {str(e)}")
@@ -380,14 +424,27 @@ class AchievementFetcherGUI(QMainWindow):
     # Generate Goldberg emu files
     def _generate_core_files(self, game_dir, app_id, file_path):
         self.write_output("Generating GSE...")
+        
+        # Resolve DLL path
+        ignore_folders = ['gse', 'crack']
+        ignore_folders = [folder.lower() for folder in ignore_folders]
+        file_path = os.path.abspath(file_path)
+        for root, dirs, files in os.walk(file_path, topdown=True):
+            dirs[:] = [d for d in dirs if d.lower() not in ignore_folders]
+            if 'steam_api.dll' in files:    # Check for steam_api.dll
+                dll_path = os.path.join(root, 'steam_api.dll')
+            if 'steam_api64.dll' in files:  # If no steam_api.dll, check for steam_api64.dll
+                dll_path = os.path.join(root, 'steam_api64.dll')
+        
         from goldberg_gen import generate_emu
-        if not generate_emu(game_dir, app_id, file_path, self.disable_overlay.isChecked()):
+        if not generate_emu(game_dir, app_id, dll_path, self.disable_overlay.isChecked()):
             raise Exception("Failed to generate Goldberg emu files")
         
         self.write_output("Fetching DLCs...")
         dlc_details = fetch_dlc(app_id)
         create_dlc_config(game_dir, dlc_details)
-
+        return dll_path
+                
     # Fetch and generate achievements.json
     def _generate_achievements(self, settings_dir, app_id, use_steam):
         self.write_output("Fetching Achievements...")
@@ -425,11 +482,7 @@ class AchievementFetcherGUI(QMainWindow):
 
         self._prepare_generation()
         
-        signals = self.thread_manager.run_function(
-            self.process_input,
-            app_id,
-            game_name
-        )
+        signals = self.thread_manager.run_function(self.process_input, app_id, game_name)
         signals.result.connect(self.on_input_processed)
         signals.error.connect(self.on_error)
 
