@@ -15,16 +15,14 @@ def main():
     nuitka_params = [
         "python -m nuitka",
         "--standalone",
-        "--onefile",
         "--windows-console-mode=disable",
-        "--windows-icon-from-ico=icon.ico",
         "--lto=yes",
         "--follow-imports",
         "--remove-output",
         "--output-dir=dist",
         "--jobs=6",
         "--disable-ccache",
-        "--include-data-file=icon.ico=icon.ico",
+        "--include-data-file=assets/icon.ico=assets/icon.ico",
         "--static-libpython=no",
         "--python-flag=no_docstrings",
         "--python-flag=no_asserts",
@@ -34,19 +32,20 @@ def main():
 
     # Include modules
     modules_to_include = [
-        "goldberg_gen",
-        "setupEmu",
-        "threadManager",
-        "achievements",
-        "appID_finder",
-        "dlc_gen"
+        "src.core.achievements",
+        "src.core.appID_finder",
+        "src.core.dlc_gen",
+        "src.core.goldberg_gen",
+        "src.core.setupEmu",
+        "src.core.threadManager",
+        "src.gui.GSE_Generator"
     ]
 
     for module in modules_to_include:
         nuitka_params.append(f"--include-module={module}")
 
     # Add main script
-    nuitka_params.append("GSE_Generator.py")
+    nuitka_params.append("main.py")
 
     # Combine all parameters
     command = " ".join(nuitka_params)

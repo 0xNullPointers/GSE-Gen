@@ -6,16 +6,19 @@ import configparser
 from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QGridLayout, QLabel, QLineEdit, QFrame, QHBoxLayout, QVBoxLayout, QCheckBox, QPushButton, QPlainTextEdit, QFileDialog
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QPalette, QIcon
-from appID_finder import get_steam_app_by_id, get_steam_app_by_name
-from achievements import fetch_from_steamcommunity, fetch_from_steamdb
-from dlc_gen import fetch_dlc, create_dlc_config
-from threadManager import ThreadManager
+
+from src.core.appID_finder import get_steam_app_by_id, get_steam_app_by_name
+from src.core.achievements import fetch_from_steamcommunity, fetch_from_steamdb
+from src.core.dlc_gen import fetch_dlc, create_dlc_config
+from src.core.threadManager import ThreadManager
+from src.core.setupEmu import download_goldberg, extract_archive
+from src.core.goldberg_gen import generate_emu
 
 # Get the path of the resource files
 def get_resource_path(filename):
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, filename)
-    return os.path.join(os.path.dirname(__file__), filename)
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', filename)
 
 # Redirect stdout to GUI
 class RedirectText:
@@ -364,7 +367,6 @@ class AchievementFetcherGUI(QMainWindow):
             return True
             
         self.write_output("Setting up GBE(Detanup01 fork)...")
-        from setupEmu import download_goldberg, extract_archive
         
         try:
             archive_path = download_goldberg()
@@ -436,7 +438,6 @@ class AchievementFetcherGUI(QMainWindow):
             if 'steam_api64.dll' in files:  # If no steam_api.dll, check for steam_api64.dll
                 dll_path = os.path.join(root, 'steam_api64.dll')
         
-        from goldberg_gen import generate_emu
         if not generate_emu(game_dir, app_id, dll_path, self.disable_overlay.isChecked()):
             raise Exception("Failed to generate Goldberg emu files")
         
@@ -540,6 +541,3 @@ def main():
     gui = AchievementFetcherGUI()
     gui.show()
     sys.exit(app.exec())
-
-if __name__ == "__main__":
-    main()
