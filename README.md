@@ -24,7 +24,7 @@ A Python-based GUI application for generating GSE (Goldberg Steam Emulator) conf
 
 ### 📦 Using the Executable (.exe)
 
-No installation required. Simply download `GSE.Generator.zip` from the [releases](https://github.com/0xNullPointers/GSE-Gen/releases/latest) page, Extract it to a folder and run the `GSE_Generator.exe`.
+No installation required. Simply download `GSE.Generator.zip` from the [releases](https://github.com/0xNullPointers/GSE-Gen/releases/latest) page, Extract it to a folder and run the Executable.
 
 ### 🐍 Using Python Source
 
@@ -35,7 +35,7 @@ pip install -r requirements.txt
 ```
 3. Run the main script:
 ```bash
-python GSE_Generator.py
+python main.py
 ```
 
 ## 📸 Screenshots
@@ -78,11 +78,18 @@ python GSE_Generator.py
 
 The project uses `Nuitka` to create a standalone executable:
 
-1. Run the build script:
+1. Install Nuitka and required dependencies:
 ```bash
-build_gui.bat
+pip install nuitka
+pip install -r requirements.txt
 ```
-The executable `GSE_Generator.exe` will be created in the `dist` directory.
+
+2. Run the Python build script:
+```bash
+python build_script.py
+```
+
+The compiled executable will be created in the `dist` directory with all required dependencies.
 
 ## 💡 Credits
 
