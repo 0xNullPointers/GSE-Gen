@@ -7,18 +7,13 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QGridLayout, Q
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QPalette, QIcon
 
-from src.core.appID_finder import get_steam_app_by_id, get_steam_app_by_name
-from src.core.achievements import fetch_from_steamcommunity, fetch_from_steamdb
-from src.core.dlc_gen import fetch_dlc, create_dlc_config
-from src.core.threadManager import ThreadManager
-from src.core.setupEmu import download_goldberg, extract_archive
-from src.core.goldberg_gen import generate_emu
-
 # Get the path of the resource files
 def get_resource_path(filename):
-    if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, filename)
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'assets', filename)
+    try:
+        base_path = sys._MEIPASS  # type: ignore
+    except AttributeError:
+        base_path = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    return os.path.join(base_path, filename)
 
 # Redirect stdout to GUI
 class RedirectText:
@@ -42,33 +37,47 @@ class AchievementFetcherGUI(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("GSE Generator")
-        self.resize(700, 500)
-        self.setMinimumSize(500, 500)
-        icon_path = get_resource_path('icon.ico')   # Get the icon path
-        self.setWindowIcon(QIcon(icon_path))    # Set the window icon
         
+        # Initialize basic attributes
         self.msg_queue = queue.Queue()
         self.assets_dir = os.path.join(os.getcwd(), "assets")
         os.makedirs(self.assets_dir, exist_ok=True)
         self.settings_path = os.path.join(self.assets_dir, 'settings.ini')
         
-        # Initialize thread manager
-        self.thread_manager = ThreadManager()
+        # Lazy initialize thread manager
+        self._thread_manager = None
         
         # Connect signals
         self.status_update.connect(self._update_status)
         self.message_received.connect(self.update_output)
         self.request_dll_selection.connect(self.select_dll)
         
-        # Setup UI
+        # Setup UI and window properties
         self.init_ui()
         self.load_saved_username()
-        
-        # Start queue checker
+        self.setup_window()
+        self.setup_queue_checker()
+
+    def setup_window(self):
+        # Setup window prop and icon
+        self.setWindowTitle("GSE Generator")
+        self.resize(700, 500)
+        self.setMinimumSize(500, 500)
+        icon_path = get_resource_path('icon.ico')
+        self.setWindowIcon(QIcon(icon_path))
+
+    def setup_queue_checker(self):
+        # Start the queue checker
         self.queue_timer = QTimer()
         self.queue_timer.timeout.connect(self.check_queue)
         self.queue_timer.start(100)
+
+    @property
+    def thread_manager(self):
+        if self._thread_manager is None:
+            from src.core.threadManager import ThreadManager    #import
+            self._thread_manager = ThreadManager()
+        return self._thread_manager
 
     # Initialize the UI
     def init_ui(self):
@@ -143,7 +152,7 @@ class AchievementFetcherGUI(QMainWindow):
 
         # Init config parser
         self.config = configparser.ConfigParser(comment_prefixes='/', allow_no_value=True)
-        self.config.optionxform = str
+        self.config.optionxform = str  # type: ignore
         self.config.read(self.settings_path)
         if 'Settings' not in self.config:
             self.config['Settings'] = {}
@@ -194,7 +203,7 @@ class AchievementFetcherGUI(QMainWindow):
         self.generate_btn.clicked.connect(self.start_generate)
 
         button_layout.addStretch(1)
-        button_layout.addWidget(self.generate_btn, alignment=Qt.AlignRight | Qt.AlignBottom)
+        button_layout.addWidget(self.generate_btn, alignment=Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
 
         controls_layout.addWidget(button_frame)
 
@@ -202,7 +211,7 @@ class AchievementFetcherGUI(QMainWindow):
     def init_output_text(self, main_layout):
         self.output_text = QPlainTextEdit()
         self.output_text.setReadOnly(True)
-        self.output_text.setFocusPolicy(Qt.NoFocus)
+        self.output_text.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.output_text.setStyleSheet(""" QPlainTextEdit { font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 14px; padding: 10px; } """)
         main_layout.addWidget(self.output_text, 1, 0)
 
@@ -225,7 +234,7 @@ class AchievementFetcherGUI(QMainWindow):
     # Status frame
     def init_status_frame(self, main_layout):
         self.status_frame = QFrame()
-        self.status_frame.setFrameStyle(QFrame.Panel | QFrame.Raised)
+        self.status_frame.setFrameStyle(QFrame.Shape.Panel | QFrame.Shadow.Raised)
         status_layout = QGridLayout(self.status_frame)
         self.status_label = QLabel("Status: Ready")
         status_layout.addWidget(self.status_label, 0, 0)
@@ -240,17 +249,20 @@ class AchievementFetcherGUI(QMainWindow):
         
         palette = self.status_frame.palette()
         if is_error:
-            palette.setColor(QPalette.Window, QColor(253, 231, 231))
-            self.status_label.setStyleSheet("color: rgb(211, 47, 47)")
+            bg_color = QColor(253, 231, 231)
+            text_color = "rgb(211, 47, 47)"
         elif "successfully" in message.lower():
-            palette.setColor(QPalette.Window, QColor(237, 247, 237))
-            self.status_label.setStyleSheet("color: rgb(46, 125, 50)")
+            bg_color = QColor(237, 255, 237)
+            text_color = "rgb(46, 125, 50)"
         else:
-            palette.setColor(QPalette.Window, QColor(240, 240, 240))
-            self.status_label.setStyleSheet("color: black")
+            # Use system colors
+            bg_color = self.palette().color(QPalette.ColorRole.Window)
+            text_color = self.palette().color(QPalette.ColorRole.WindowText).name()
         
+        palette.setColor(QPalette.ColorRole.Window, bg_color)
         self.status_frame.setPalette(palette)
         self.status_frame.setAutoFillBackground(True)
+        self.status_label.setStyleSheet(f"color: {text_color}")
 
     # Event handlers
     def on_game_name_change(self):
@@ -306,42 +318,43 @@ class AchievementFetcherGUI(QMainWindow):
 
     # Select steam_api(64).dll dialog
     def select_dll(self):
-            self.write_output("Select Original Game folder...")
-            try:
-                # Create a new QFileDialog
-                dialog = QFileDialog(self)
-                dialog.setWindowTitle("Select original Game folder")
-                dialog.setFileMode(QFileDialog.Directory)
-                dialog.setViewMode(QFileDialog.Detail)
-            
-                if dialog.exec() == QFileDialog.Accepted:
-                    selected_files = dialog.selectedFiles()
-                    if selected_files:
-                        folder_path = os.path.normpath(selected_files[0])
-                        # Ensure proper permissions
-                        if os.access(folder_path, os.R_OK):
-                            self.selected_dll_path = folder_path
-                            self.continue_generation()
-                        else:
-                            self.write_output(f"Permission denied - {folder_path}")
-                            self.set_status("Permission denied", True)
-                            self.generate_btn.setEnabled(True)
+        self.write_output("Select Original Game folder...")
+        try:
+            # Create a new QFileDialog
+            dialog = QFileDialog(self)
+            dialog.setWindowTitle("Select original Game folder")
+            dialog.setFileMode(QFileDialog.FileMode.Directory)
+            dialog.setViewMode(QFileDialog.ViewMode.Detail)
+        
+            if dialog.exec() == QFileDialog.DialogCode.Accepted:
+                selected_files = dialog.selectedFiles()
+                if selected_files:
+                    folder_path = os.path.normpath(selected_files[0])
+                    if os.access(folder_path, os.R_OK):
+                        self.selected_dll_path = folder_path
+                        self.continue_generation()
                     else:
-                        self.write_output("No folder selected")
-                        self.set_status("No folder selected", True)
+                        self.write_output(f"Permission denied - {folder_path}")
+                        self.set_status("Permission denied", True)
                         self.generate_btn.setEnabled(True)
                 else:
                     self.write_output("No folder selected")
                     self.set_status("No folder selected", True)
                     self.generate_btn.setEnabled(True)
-                
-            except Exception as e:
-                self.write_output(f"Error selecting folder: {str(e)}")
-                self.set_status("Error in folder selection", True)
+            else:
+                self.write_output("No folder selected")
+                self.set_status("No folder selected", True)
                 self.generate_btn.setEnabled(True)
+                
+        except Exception as e:
+            self.write_output(f"Error selecting folder: {str(e)}")
+            self.set_status("Error in folder selection", True)
+            self.generate_btn.setEnabled(True)
 
     # Process input
     def process_input(self, app_id, game_name):
+        from src.core.appID_finder import get_steam_app_by_id, get_steam_app_by_name    #import
+
         result = {}
         
         if app_id:
@@ -362,6 +375,8 @@ class AchievementFetcherGUI(QMainWindow):
 
     # Setup Goldberg Emu
     def setup_emu(self):
+        from src.core.setupEmu import download_goldberg, extract_archive    #import
+        
         EMU_FOLDER = os.path.join("assets", "goldberg_emu")
         if os.path.exists(EMU_FOLDER):
             return True
@@ -378,6 +393,8 @@ class AchievementFetcherGUI(QMainWindow):
 
     # Generate files
     def generate_files(self, app_id, file_path, use_steam):
+        from src.core.appID_finder import get_steam_app_by_id    #import
+        
         app_index = get_steam_app_by_id(app_id)
         if not app_index or 'name' not in app_index:
             raise Exception(f"Could not find game info for AppID '{app_id}'")
@@ -425,19 +442,26 @@ class AchievementFetcherGUI(QMainWindow):
 
     # Generate Goldberg emu files
     def _generate_core_files(self, game_dir, app_id, file_path):
+        from src.core.goldberg_gen import generate_emu    #import
+        from src.core.dlc_gen import fetch_dlc, create_dlc_config    #import
+        
         self.write_output("Generating GSE...")
         
         # Resolve DLL path
         ignore_folders = ['gse', 'crack']
         ignore_folders = [folder.lower() for folder in ignore_folders]
         file_path = os.path.abspath(file_path)
+        dll_path = None
         for root, dirs, files in os.walk(file_path, topdown=True):
             dirs[:] = [d for d in dirs if d.lower() not in ignore_folders]
             if 'steam_api.dll' in files:    # Check for steam_api.dll
                 dll_path = os.path.join(root, 'steam_api.dll')
-            if 'steam_api64.dll' in files:  # If no steam_api.dll, check for steam_api64.dll
+            if 'steam_api64.dll' in files:    # If no steam_api.dll, check for steam_api64.dll
                 dll_path = os.path.join(root, 'steam_api64.dll')
         
+        if not dll_path:
+            raise Exception("Could not find steam_api.dll or steam_api64.dll")
+            
         if not generate_emu(game_dir, app_id, dll_path, self.disable_overlay.isChecked()):
             raise Exception("Failed to generate Goldberg emu files")
         
@@ -460,6 +484,8 @@ class AchievementFetcherGUI(QMainWindow):
             os.chdir(original_cwd)
 
     def _fetch_achievements(self, app_id, use_steam):
+        from src.core.achievements import fetch_from_steamcommunity, fetch_from_steamdb    #import
+        
         if use_steam:
             try:
                 return fetch_from_steamcommunity(app_id, silent=True)
@@ -530,11 +556,24 @@ class AchievementFetcherGUI(QMainWindow):
         sys.stdout = sys.__stdout__
 
     def closeEvent(self, event):
-        try:
-            self.thread_manager.cleanup()
-        except Exception:
-            pass
-        super().closeEvent(event)
+        # Stop queue timer
+        if hasattr(self, 'queue_timer'):
+            self.queue_timer.stop()
+        
+        # Clear message queue
+        if hasattr(self, 'msg_queue'):
+            while not self.msg_queue.empty():
+                try:
+                    self.msg_queue.get_nowait()
+                except queue.Empty:
+                    break
+        
+        # Accept close event
+        event.accept()
+        
+        # Cleanup thread manager in background
+        if self._thread_manager is not None:
+            QTimer.singleShot(0, self._thread_manager.cleanup)
 
 def main():
     app = QApplication(sys.argv)
