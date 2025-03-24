@@ -11,7 +11,7 @@ def run_command(command):
 def main():
     print("Starting compilation process...")
 
-    # Define Nuitka compilation parameters
+    # Nuitka compilation parameters
     nuitka_params = [
         "python -m nuitka",
         "--standalone",
@@ -22,11 +22,19 @@ def main():
         "--output-dir=dist",
         "--jobs=6",
         "--disable-ccache",
-        "--include-data-file=assets/icon.ico=assets/icon.ico",
+        "--include-data-file=icon.ico=icon.ico",
+        "--windows-icon-from-ico=icon.ico",
         "--static-libpython=no",
         "--python-flag=no_docstrings",
         "--python-flag=no_asserts",
         "--enable-plugin=pyside6",
+        # "--enable-plugin=anti-bloat",
+        "--python-flag=no_site",
+        "--python-flag=isolated",
+        "--prefer-source-code",
+        "--nofollow-import-to=tkinter",
+        "--nofollow-import-to=PIL",
+        "--nofollow-import-to=numpy",
         "--no-deployment-flag=debug"
     ]
 
