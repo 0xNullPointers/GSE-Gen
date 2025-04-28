@@ -5,6 +5,9 @@ on:
     tags:
       - '*'
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -60,7 +63,7 @@ jobs:
           mv "dist/main.dist" "GSE Generator/assets/" || echo "main.dist not found"
           
           # Create zip archive with tag version in name
-          zip -9 -r "GSE-Generator_${{ env.TAG_NAME }}.zip" "GSE Generator"
+          zip -9 -r "GSE.Generator-${{ env.TAG_NAME }}.zip" "GSE Generator"
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -69,6 +72,6 @@ jobs:
           body: ${{ env.RELEASE_NOTES }}
           draft: false
           prerelease: false
-          files: GSE-Generator_${{ env.TAG_NAME }}.zip
+          files: GSE.Generator-${{ env.TAG_NAME }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
