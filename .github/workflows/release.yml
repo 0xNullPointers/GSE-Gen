@@ -1,0 +1,74 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set tag name
+        id: tag
+        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+      - name: Extract release notes
+        id: extract_release_notes
+        run: |
+          # Extract the release notes for the current tag from RELEASE_NOTES.md
+          if [ -f RELEASE_NOTES.md ]; then
+            # Extract content between the current tag header and the next tag header
+            RELEASE_NOTES=$(awk -v tag="# ${{ env.TAG_NAME }}" '
+              BEGIN { found=0; } 
+              $0 ~ "^# " { 
+                if (found == 1) { exit; } 
+                if ($0 == tag) { found=1; next; } 
+              } 
+              found == 1 { notes = notes $0 "\n" } 
+              END { print notes }
+            ' RELEASE_NOTES.md)
+            
+            # Create a multiline string for the GitHub environment
+            echo 'RELEASE_NOTES<<EOF' >> $GITHUB_ENV
+            echo "$RELEASE_NOTES" >> $GITHUB_ENV
+            echo 'EOF' >> $GITHUB_ENV
+            
+            echo "::set-output name=has_notes::true"
+          else
+            echo "::set-output name=has_notes::false"
+            echo "RELEASE_NOTES=No release notes found for tag ${{ env.TAG_NAME }}" >> $GITHUB_ENV
+          fi
+
+      - name: Package Release Assets
+        run: |
+          # Create release package directory
+          mkdir -p "GSE Generator/assets"
+          
+          # Copy the assets folder contents
+          cp -r assets/* "GSE Generator/assets/" || true
+          
+          # Move Launcher.exe to the root and rename it
+          mv "assets/Launcher.exe" "GSE Generator/GSE_Gen.exe" || echo "Launcher.exe not found"
+          
+          # Move main.dist into assets folder
+          mv "dist/main.dist" "GSE Generator/assets/" || echo "main.dist not found"
+          
+          # Create zip archive with tag version in name
+          zip -9 -r "GSE-Generator_${{ env.TAG_NAME }}.zip" "GSE Generator"
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ${{ env.TAG_NAME }}
+          body: ${{ env.RELEASE_NOTES }}
+          draft: false
+          prerelease: false
+          files: GSE-Generator_${{ env.TAG_NAME }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
