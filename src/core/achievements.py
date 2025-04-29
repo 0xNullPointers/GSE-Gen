@@ -87,24 +87,35 @@ def fetch_from_steamdb(appid: str, silent: bool = False) -> List[Dict]:
     response = mk_request(url, session)
     soup = BeautifulSoup(response.text, 'html.parser')
     achievements = []
-    achievements_div = soup.find('div', id='js-achievements')
-    rows = achievements_div.select("table.table tbody tr")
-    for row in rows:
-        name_td = row.select_one("td")
-        if not name_td:
+    
+    achievement_divs = soup.select('div.achievement')
+    
+    for achievement_div in achievement_divs:
+        name_div = achievement_div.select_one('div.achievement_api')
+        if not name_div:
             continue
-        name = name_td.get_text(strip=True)
-        second_column = row.select_one("td:nth-of-type(2)")
-        if not second_column:
-            continue
-        texts = list(second_column.stripped_strings)
+        name = name_div.text.strip()
 
-        display_name = texts[0] if texts else ""
-        hidden = 1 if second_column.select_one("svg.octicon-eye-closed") else 0
-        description = " ".join(text for text in texts[1:] if text != "Hidden.") if not hidden and len(texts) > 1 else ""
-        icons = row.select("td:nth-of-type(3) img")
-        icon = icons[0].get("data-name", "") if len(icons) >= 1 else ""
-        icongray = icons[1].get("data-name", "") if len(icons) >= 2 else ""
+        display_name_div = achievement_div.select_one('div.achievement_name')
+        display_name = display_name_div.text.strip() if display_name_div else ""
+        desc_div = achievement_div.select_one('div.achievement_desc')
+        hidden = 0
+        description = ""
+        if desc_div:
+            hidden_span = desc_div.select_one('span.achievement_spoiler')
+            if hidden_span:
+                hidden = 1
+                description = hidden_span.text.strip()
+            else:
+                description = desc_div.text.strip()
+        
+        icon_imgs = achievement_div.select('img')
+        icon = ""
+        icongray = ""
+        if len(icon_imgs) >= 1:
+            icon = icon_imgs[0].get('data-name', '')
+        if len(icon_imgs) >= 2:
+            icongray = icon_imgs[1].get('data-name', '')
         
         achievements.append({
             "description": description,
