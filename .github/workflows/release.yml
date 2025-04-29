@@ -24,7 +24,7 @@ jobs:
       - name: Extract release notes
         id: extract_release_notes
         run: |
-          # Extract the release notes for the current tag from RELEASE_NOTES.md
+          # Extract the release notes
           if [ -f RELEASE_NOTES.md ]; then
             # Extract content between the current tag header and the next tag header
             RELEASE_NOTES=$(awk -v tag="# ${{ env.TAG_NAME }}" '
@@ -42,25 +42,50 @@ jobs:
             echo "$RELEASE_NOTES" >> $GITHUB_ENV
             echo 'EOF' >> $GITHUB_ENV
             
-            echo "::set-output name=has_notes::true"
+            echo "has_notes=true" >> $GITHUB_OUTPUT
           else
-            echo "::set-output name=has_notes::false"
+            echo "has_notes=false" >> $GITHUB_OUTPUT
             echo "RELEASE_NOTES=No release notes found for tag ${{ env.TAG_NAME }}" >> $GITHUB_ENV
           fi
 
+      - name: Get previous tag
+        id: prev_tag
+        run: |
+          # Get the previous tag
+          PREV_TAG=$(git tag --sort=-v:refname | grep -A 1 ${{ env.TAG_NAME }} | tail -n 1)
+          if [ -z "$PREV_TAG" ]; then
+            # If no previous tag, use the current tag (first release)
+            PREV_TAG=${{ env.TAG_NAME }}
+          fi
+          echo "PREV_TAG=${PREV_TAG}" >> $GITHUB_ENV
+          
+          # Append changelog URL to release notes
+          echo 'RELEASE_NOTES<<EOF' >> $GITHUB_ENV
+          echo "**Full Changelog**: https://github.com/0xNullPointers/GSE-Gen/compare/${PREV_TAG}...${{ env.TAG_NAME }}" >> $GITHUB_ENV
+          echo "" >> $GITHUB_ENV
+          echo "${{ env.RELEASE_NOTES }}" >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
       - name: Package Release Assets
         run: |
-          # Create release package directory
+          # Create release directory
           mkdir -p "GSE Generator/assets"
           
-          # Copy the assets folder contents
+          # Copy assets folder
           cp -r assets/* "GSE Generator/assets/" || true
           
-          # Move Launcher.exe to the root and rename it
-          mv "assets/Launcher.exe" "GSE Generator/GSE_Gen.exe" || echo "Launcher.exe not found"
+          # Move Launcher.exe
+          mv "GSE Generator/assets/Launcher.exe" "GSE Generator/GSE_Gen.exe" || echo "Launcher.exe not found"
           
-          # Move main.dist into assets folder
-          mv "dist/main.dist" "GSE Generator/assets/" || echo "main.dist not found"
+          # Extract main.dist.zip and move it to assets
+          if [ -f "dist/main_dist.zip" ]; then
+            mkdir -p temp_extract
+            unzip "dist/main_dist.zip" -d temp_extract
+            mv temp_extract/main.dist "GSE Generator/assets/"
+            rm -rf temp_extract
+          else
+            echo "main_dist.zip not found"
+          fi
           
           # Create zip archive with tag version in name
           zip -9 -r "GSE.Generator-${{ env.TAG_NAME }}.zip" "GSE Generator"
