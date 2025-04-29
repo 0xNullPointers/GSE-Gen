@@ -4,3 +4,7 @@
 - Automated achievement generation
 - Updated build script
 - Improved startup time
+
+# v1.0.1
+- Fixed issues with achievement fetching
+- Resolved hidden descriptions for achievements
