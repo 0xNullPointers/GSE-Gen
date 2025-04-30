@@ -8,7 +8,7 @@ startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 startupinfo.wShowWindow = subprocess.SW_HIDE
 
 SEVENZIP_PATH = os.path.join("assets", "7zip", "7z.exe")
-GOLDBERG_URL = "https://github.com/Detanup01/gbe_fork/releases/latest/download/emu-win-release.7z"
+GOLDBERG_URL = "https://github.com/0xNullPointers/gbe_fork/releases/latest/download/emu-win-release.7z"
 EMU_FOLDER = os.path.join("assets", "goldberg_emu")
 ARCHIVE_NAME = "emu-win-release.7z"
 
