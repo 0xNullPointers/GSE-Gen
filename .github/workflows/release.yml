@@ -36,12 +36,29 @@ jobs:
           
           if (Test-Path $releaseFile) {
             $lines = Get-Content $releaseFile
-            $startIdx = ($lines | Select-String "^$([regex]::Escape($tagHeader))$").LineNumber
+            $startIdx = -1
             
-            if ($startIdx) {
-              $endIdx = ($lines[$startIdx..($lines.Length-1)] | Select-String "^# " | Select-Object -First 1)?.LineNumber
-              $endIdx = if ($endIdx) { $startIdx + $endIdx - 1 } else { $lines.Length }
-              $releaseNotes = ($lines[($startIdx)..($endIdx-2)] | Where-Object { $_.Trim() }) -join "`n"
+            for ($i = 0; $i -lt $lines.Length; $i++) {
+              if ($lines[$i].Trim() -eq $tagHeader.Trim()) {
+                $startIdx = $i + 1
+                break
+              }
+            }
+            
+            if ($startIdx -ge 0) {
+              $endIdx = $lines.Length
+              for ($i = $startIdx; $i -lt $lines.Length; $i++) {
+                if ($lines[$i] -match "^# ") {
+                  $endIdx = $i
+                  break
+                }
+              }
+              
+              # Extract the release notes content
+              $releaseNotes = ($lines[$startIdx..($endIdx-1)] | Where-Object { $_ -ne $null -and $_.Trim() -ne "" }) -join "`n"
+              if (-not $releaseNotes.Trim()) {
+                $releaseNotes = $defaultNotes
+              }
             } else {
               $releaseNotes = $defaultNotes
             }
@@ -49,11 +66,11 @@ jobs:
             $releaseNotes = $defaultNotes
           }
           
-          @"
-          RELEASE_NOTES<<EOF
-          $releaseNotes
-          EOF
-          "@ >> $env:GITHUB_ENV
+          # Use here-string with proper escaping
+          $delimiter = "RELEASE_NOTES_EOF_$(Get-Random)"
+          "RELEASE_NOTES<<$delimiter" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $releaseNotes | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $delimiter | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         shell: pwsh
 
       - name: Generate changelog URL
@@ -61,22 +78,21 @@ jobs:
           $tags = (git tag --sort=-v:refname)
           $currentIdx = [array]::IndexOf($tags, $env:TAG_NAME)
           $prevTag = if ($currentIdx -lt ($tags.Length - 1)) { $tags[$currentIdx + 1] } else { $env:TAG_NAME }
+          $changelogUrl = "**Full Changelog**: https://github.com/0xNullPointers/GSE-Gen/compare/$prevTag...$env:TAG_NAME"
           
-          $changelogUrl = "**Full Changelog**: https://github.com/0xNullPointers/GSE-Gen/compare/$prevTag..$env:TAG_NAME"
-          
-          @"
-          RELEASE_NOTES<<EOF
-          $changelogUrl
-          
-          $env:RELEASE_NOTES
-          EOF
-          "@ >> $env:GITHUB_ENV
+          # Use same delimiter approach for consistency
+          $delimiter = "FINAL_NOTES_EOF_$(Get-Random)"
+          "RELEASE_NOTES<<$delimiter" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $changelogUrl | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $env:RELEASE_NOTES | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $delimiter | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         shell: pwsh
 
-      - name: Setup 7-Zip utilities
+      - name: Setup 7-Zip
         run: |
           $baseUrl = "https://7-zip.org"
-          $defaultVersion = "2408"
+          $defaultVersion = "2409"
           
           # Attempt to get latest version
           $version = try {
@@ -139,7 +155,7 @@ jobs:
           }
           
           # Create final release package
-          Compress-Archive -Path $env:RELEASE_DIR -DestinationPath $env:RELEASE_ZIP -CompressionLevel Optimal
+          & 7z a -tzip -mx=9 "$env:RELEASE_ZIP" "$env:RELEASE_DIR\*"
           Write-Host "Created release package: $env:RELEASE_ZIP"
         shell: pwsh
       
