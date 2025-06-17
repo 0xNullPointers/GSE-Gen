@@ -2,101 +2,154 @@ name: Create Release
 
 on:
   push:
-    tags:
-      - '*'
+    tags: ['*']
 
 permissions:
   contents: write
 
+env:
+  RELEASE_DIR: "GSE Generator"
+  ASSETS_DIR: "assets"
+  ZIP_TEMP_DIR: "7zip-temp"
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Set tag name
-        id: tag
-        run: echo "TAG_NAME=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+      - name: Set environment variables
+        run: |
+          $tagName = $env:GITHUB_REF -replace 'refs/tags/', ''
+          echo "TAG_NAME=$tagName" >> $env:GITHUB_ENV
+          echo "RELEASE_ZIP=GSE.Generator-$tagName.zip" >> $env:GITHUB_ENV
+        shell: pwsh
 
       - name: Extract release notes
-        id: extract_release_notes
         run: |
-          # Extract the release notes
-          if [ -f RELEASE_NOTES.md ]; then
-            # Extract content between the current tag header and the next tag header
-            RELEASE_NOTES=$(awk -v tag="# ${{ env.TAG_NAME }}" '
-              BEGIN { found=0; } 
-              $0 ~ "^# " { 
-                if (found == 1) { exit; } 
-                if ($0 == tag) { found=1; next; } 
-              } 
-              found == 1 { notes = notes $0 "\n" } 
-              END { print notes }
-            ' RELEASE_NOTES.md)
+          $releaseFile = "RELEASE_NOTES.md"
+          $tagHeader = "# $env:TAG_NAME"
+          $defaultNotes = "No release notes found for tag $env:TAG_NAME"
+          
+          if (Test-Path $releaseFile) {
+            $lines = Get-Content $releaseFile
+            $startIdx = ($lines | Select-String "^$([regex]::Escape($tagHeader))$").LineNumber
             
-            # Create a multiline string for the GitHub environment
-            echo 'RELEASE_NOTES<<EOF' >> $GITHUB_ENV
-            echo "$RELEASE_NOTES" >> $GITHUB_ENV
-            echo 'EOF' >> $GITHUB_ENV
-            
-            echo "has_notes=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_notes=false" >> $GITHUB_OUTPUT
-            echo "RELEASE_NOTES=No release notes found for tag ${{ env.TAG_NAME }}" >> $GITHUB_ENV
-          fi
+            if ($startIdx) {
+              $endIdx = ($lines[$startIdx..($lines.Length-1)] | Select-String "^# " | Select-Object -First 1)?.LineNumber
+              $endIdx = if ($endIdx) { $startIdx + $endIdx - 1 } else { $lines.Length }
+              $releaseNotes = ($lines[($startIdx)..($endIdx-2)] | Where-Object { $_.Trim() }) -join "`n"
+            } else {
+              $releaseNotes = $defaultNotes
+            }
+          } else {
+            $releaseNotes = $defaultNotes
+          }
+          
+          @"
+          RELEASE_NOTES<<EOF
+          $releaseNotes
+          EOF
+          "@ >> $env:GITHUB_ENV
+        shell: pwsh
 
-      - name: Get previous tag
-        id: prev_tag
+      - name: Generate changelog URL
         run: |
-          # Get the previous tag
-          PREV_TAG=$(git tag --sort=-v:refname | grep -A 1 ${{ env.TAG_NAME }} | tail -n 1)
-          if [ -z "$PREV_TAG" ]; then
-            # If no previous tag, use the current tag (first release)
-            PREV_TAG=${{ env.TAG_NAME }}
-          fi
-          echo "PREV_TAG=${PREV_TAG}" >> $GITHUB_ENV
+          $tags = (git tag --sort=-v:refname)
+          $currentIdx = [array]::IndexOf($tags, $env:TAG_NAME)
+          $prevTag = if ($currentIdx -lt ($tags.Length - 1)) { $tags[$currentIdx + 1] } else { $env:TAG_NAME }
           
-          # Append changelog URL to release notes
-          echo 'RELEASE_NOTES<<EOF' >> $GITHUB_ENV
-          echo "**Full Changelog**: https://github.com/0xNullPointers/GSE-Gen/compare/${PREV_TAG}...${{ env.TAG_NAME }}" >> $GITHUB_ENV
-          echo "" >> $GITHUB_ENV
-          echo "${{ env.RELEASE_NOTES }}" >> $GITHUB_ENV
-          echo 'EOF' >> $GITHUB_ENV
+          $changelogUrl = "**Full Changelog**: https://github.com/0xNullPointers/GSE-Gen/compare/$prevTag..$env:TAG_NAME"
+          
+          @"
+          RELEASE_NOTES<<EOF
+          $changelogUrl
+          
+          $env:RELEASE_NOTES
+          EOF
+          "@ >> $env:GITHUB_ENV
+        shell: pwsh
 
-      - name: Package Release Assets
+      - name: Setup 7-Zip utilities
         run: |
-          # Create release directory
-          mkdir -p "GSE Generator/assets"
+          $baseUrl = "https://7-zip.org"
+          $defaultVersion = "2408"
           
-          # Copy assets folder
-          cp -r assets/* "GSE Generator/assets/" || true
+          # Attempt to get latest version
+          $version = try {
+            (Invoke-WebRequest "$baseUrl/download.html" -UseBasicParsing).Content |
+            Select-String "7-Zip (\d+\.\d+)" |
+            ForEach-Object { $_.Matches[0].Groups[1].Value -replace '\.', '' } |
+            Select-Object -First 1
+          } catch { $defaultVersion }
           
-          # Move Launcher.exe
-          mv "GSE Generator/assets/Launcher.exe" "GSE Generator/GSE_Gen.exe" || echo "Launcher.exe not found"
+          $zipUrl = "$baseUrl/a/7z$version-extra.7z"
+          Write-Host "Downloading: $zipUrl"
           
-          # Extract main.dist.zip and move it to assets
-          if [ -f "dist/main_dist.zip" ]; then
-            mkdir -p temp_extract
-            unzip "dist/main_dist.zip" -d temp_extract
-            mv temp_extract/main.dist "GSE Generator/assets/"
-            rm -rf temp_extract
-          else
-            echo "main_dist.zip not found"
-          fi
+          Invoke-WebRequest $zipUrl -OutFile "7zip-extra.7z"
           
-          # Create zip archive with tag version in name
-          zip -9 -r "GSE.Generator-${{ env.TAG_NAME }}.zip" "GSE Generator"
+          # Extract and organize
+          if (Get-Command "7z" -ErrorAction SilentlyContinue) {
+            7z x "7zip-extra.7z" -o"$env:ZIP_TEMP_DIR"
+          }
+          
+          New-Item -Path "$env:ASSETS_DIR/7zip" -ItemType Directory -Force
+          
+          Get-ChildItem "$env:ZIP_TEMP_DIR" -Recurse -Include "7za.dll", "7za.exe" |
+          ForEach-Object { Copy-Item $_.FullName -Destination "$env:ASSETS_DIR/7zip/" }
+          
+          # Cleanup
+          Remove-Item @("$env:ZIP_TEMP_DIR", "7zip-extra.7z") -Recurse -Force -ErrorAction SilentlyContinue
+          
+          Write-Host "7-Zip files installed:"
+          Get-ChildItem "$env:ASSETS_DIR/7zip"
+        shell: pwsh
+
+      - name: Package release assets
+        run: |
+          # Create release structure
+          $releaseAssetsPath = "$env:RELEASE_DIR/$env:ASSETS_DIR"
+          New-Item -Path $releaseAssetsPath -ItemType Directory -Force
+          
+          # Copy assets
+          if (Test-Path $env:ASSETS_DIR) {
+            Copy-Item "$env:ASSETS_DIR/*" -Destination $releaseAssetsPath -Recurse -Force
+          }
+          
+          # Move launcher executable
+          $launcherPath = "$releaseAssetsPath/Launcher.exe"
+          if (Test-Path $launcherPath) {
+            Move-Item $launcherPath -Destination "$env:RELEASE_DIR/GSE_Gen.exe"
+          } else {
+            Write-Warning "Launcher.exe not found at $launcherPath"
+          }
+          
+          # Extract and integrate main distribution
+          $mainDistZip = "dist/main_dist.zip"
+          if (Test-Path $mainDistZip) {
+            $tempExtract = "temp_extract"
+            Expand-Archive $mainDistZip -DestinationPath $tempExtract
+            Move-Item "$tempExtract/main.dist" -Destination $releaseAssetsPath
+            Remove-Item $tempExtract -Recurse -Force
+          } else {
+            Write-Warning "main_dist.zip not found at $mainDistZip"
+          }
+          
+          # Create final release package
+          Compress-Archive -Path $env:RELEASE_DIR -DestinationPath $env:RELEASE_ZIP -CompressionLevel Optimal
+          Write-Host "Created release package: $env:RELEASE_ZIP"
+        shell: pwsh
       
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
           name: ${{ env.TAG_NAME }}
           body: ${{ env.RELEASE_NOTES }}
           draft: false
           prerelease: false
-          files: GSE.Generator-${{ env.TAG_NAME }}.zip
+          files: ${{ env.RELEASE_ZIP }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
