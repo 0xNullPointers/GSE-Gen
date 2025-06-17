@@ -56,6 +56,7 @@ class AchievementFetcherGUI(QMainWindow):
         self.load_saved_username()
         self.setup_window()
         self.setup_queue_checker()
+        self.show_help_text()  # Add guide in output_text-box
 
     def setup_window(self):
         # Setup window prop and icon
@@ -78,6 +79,21 @@ class AchievementFetcherGUI(QMainWindow):
             from src.core.threadManager import ThreadManager    # import
             self._thread_manager = ThreadManager()
         return self._thread_manager
+
+    def show_help_text(self):
+        help_text = """GSE Generator - Quick Guide
+
+  • Account Name: Optional (default used if empty)
+  • Game Name: Full game name (e.g. "Counter-Strike 2")  
+  • AppID: Steam AppID number (e.g. 730)
+
+REQUIRED: Either Game Name OR AppID must be provided — not both.
+TIPS: Hover over the options for more info
+
+Click Generate to start the process."""
+
+        self.output_text.setPlainText(help_text)
+        self.output_text.setStyleSheet("""QPlainTextEdit { font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 14px; padding: 10px; color: #888888; }""")
 
     # Initialize the UI
     def init_ui(self):
@@ -216,7 +232,6 @@ class AchievementFetcherGUI(QMainWindow):
         self.output_text = QPlainTextEdit()
         self.output_text.setReadOnly(True)
         self.output_text.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.output_text.setStyleSheet(""" QPlainTextEdit { font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 14px; padding: 10px; } """)
         main_layout.addWidget(self.output_text, 1, 0)
 
     def write_output(self, message):
@@ -507,6 +522,9 @@ class AchievementFetcherGUI(QMainWindow):
 
     # Start generating GSE
     def start_generate(self):
+        self.output_text.clear()    # Clear guide text
+        self.output_text.setStyleSheet("""QPlainTextEdit { font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 14px; padding: 10px; }""")
+
         game_name = self.game_name_entry.text().strip()
         app_id = self.app_id_entry.text().strip()
 
