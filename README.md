@@ -42,7 +42,7 @@ python main.py
 
 <details>
 <summary><strong>☀️ Light Mode</strong></summary>
-<img src="images/GSE_white.png" alt="Light Mode Screenshot" width="600px">
+<img src="images/GSE_light.png" alt="Light Mode Screenshot" width="600px">
 </details>
 
 <details>
