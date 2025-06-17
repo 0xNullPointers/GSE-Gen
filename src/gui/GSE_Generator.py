@@ -62,6 +62,7 @@ class AchievementFetcherGUI(QMainWindow):
         self.setWindowTitle("GSE Generator")
         self.resize(700, 500)
         self.setMinimumSize(500, 500)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.WindowMinimizeButtonHint | Qt.WindowType.WindowCloseButtonHint)    # Disable maximize button
         icon_path = get_resource_path('icon.ico')
         self.setWindowIcon(QIcon(icon_path))
 
@@ -106,6 +107,7 @@ class AchievementFetcherGUI(QMainWindow):
         account_label = QLabel("Account Name:")
         self.user_account_entry = QLineEdit()
         self.user_account_entry.setMinimumHeight(24)
+        self.user_account_entry.setPlaceholderText("e.g. gse orca")
         self.user_account_entry.textChanged.connect(self.save_username)
         input_layout.addWidget(account_label, 0, 0)
         input_layout.addWidget(self.user_account_entry, 0, 1)
@@ -115,6 +117,7 @@ class AchievementFetcherGUI(QMainWindow):
         game_label = QLabel("Game Name:")
         self.game_name_entry = QLineEdit()
         self.game_name_entry.setMinimumHeight(24)
+        self.game_name_entry.setPlaceholderText("e.g. Counter-Strike 2")
         self.game_name_entry.textChanged.connect(self.on_game_name_change)
         input_layout.addWidget(game_label, 1, 0)
         input_layout.addWidget(self.game_name_entry, 1, 1)
@@ -124,6 +127,7 @@ class AchievementFetcherGUI(QMainWindow):
         appid_label = QLabel("AppID:")
         self.app_id_entry = QLineEdit()
         self.app_id_entry.setMinimumHeight(24)
+        self.app_id_entry.setPlaceholderText("e.g. 730")
         self.app_id_entry.textChanged.connect(self.on_app_id_change)
         input_layout.addWidget(appid_label, 2, 0)
         input_layout.addWidget(self.app_id_entry, 2, 1)
@@ -571,8 +575,8 @@ class AchievementFetcherGUI(QMainWindow):
                 except queue.Empty:
                     break
         
-        # Accept close event
-        event.accept()
+        self.hide()  # Hide window immediately
+        event.accept()  # Accept close event
         
         # Cleanup thread manager in background
         if self._thread_manager is not None:
