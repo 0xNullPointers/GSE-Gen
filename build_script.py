@@ -34,7 +34,7 @@ def main():
         "--nofollow-import-to=tkinter",
         "--nofollow-import-to=PIL",
         "--nofollow-import-to=numpy",
-        "--no-deployment-flag=debug"
+        "--no-deployment-flag=debug",
         "--python-flag=no_warnings",
         "--python-flag=no_randomization"
     ]
